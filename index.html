@@ -1838,9 +1838,6 @@ function App({ usuarioAuth, aoSair }) {
               <button className={`tab-btn ${tab === "cobrancas" ? "active" : ""}`} onClick={() => setTab("cobrancas")}>
                 <MailIcon size={15} /> Cobranças
               </button>
-              <button className={`tab-btn ${tab === "compartilhado" ? "active" : ""}`} onClick={() => setTab("compartilhado")}>
-                <UsersIcon size={15} /> Compartilhado
-              </button>
             </div>
             <button className="usuario-atual-btn" onClick={() => auth.signOut()} title="Clique para sair da conta">
               <UserIcon size={14} />
@@ -2087,50 +2084,6 @@ function App({ usuarioAuth, aoSair }) {
                 </tbody>
               </table></div>
             )}
-          </div>
-        )}
-
-        {tab === "compartilhado" && (
-          <div>
-            <div className="shared-grid">
-              <div className="shared-card">
-                <div className="card-head">
-                  <div><h2>Base Compartilhada</h2><div className="sub">Firebase (Firestore + Authentication) · mesma base para todos os usuários</div></div>
-                  <span className="regra-badge regra-badge-ativa">Sincronização em tempo real</span>
-                </div>
-                <div className="shared-body">
-                  <div className="shared-status"><span className="shared-dot ok"></span>
-                    <span>Conectado como <strong style={{ color: "var(--text)" }}>{usuarioAuth.email}</strong>{usuarioAtual ? ` · ${usuarioAtual.nome} (${isAdm ? "ADM" : "USER"})` : ""}</span>
-                  </div>
-                  <p style={{ fontSize: 13.5, color: "var(--text-dim)", lineHeight: 1.55 }}>
-                    Registro, Agenda e Usuários ficam salvos no Firestore e são atualizados <strong>instantaneamente</strong> em
-                    todos os navegadores abertos — não é preciso publicar nem atualizar manualmente.
-                    {" "}{acoes.length} ação(ões), {reunioes.length} reunião(ões) e {usuarios.length} usuário(s) sincronizados agora.
-                  </p>
-                  {isAdm && (
-                    <div className="shared-actions">
-                      <button className="btn-danger" onClick={() => {
-                        const ok = window.confirm("Isso vai SUBSTITUIR todas as ações atuais pela base original (173 ações). Use apenas se a base estiver vazia ou corrompida. Continuar?");
-                        if (!ok) return;
-                        DOC_ACOES.set({ lista: SEED_ACOES, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp() })
-                          .then(() => { setToast("Base de ações reimportada."); setTimeout(() => setToast(null), 3000); })
-                          .catch((e) => { setToast(`Falha: ${e.message}`); setTimeout(() => setToast(null), 4000); });
-                      }}><AlertIcon size={14} /> Reimportar base original (173 ações)</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="shared-card">
-                <div className="card-head"><div><h2>Como funciona</h2><div className="sub">Sem servidor próprio, sem Power Automate</div></div></div>
-                <div className="shared-body shared-note">
-                  <p><strong>1.</strong> Cada pessoa entra com e-mail e senha (criados no Firebase Console → Authentication).</p>
-                  <p><strong>2.</strong> Toda alteração em uma ação, reunião ou usuário é salva no Firestore e chega em tempo real para todo mundo com o app aberto.</p>
-                  <p><strong>3.</strong> Quem é <strong>ADM</strong> pode editar todos os campos e gerenciar usuários; quem é <strong>USER</strong> só visualiza e edita os campos liberados.</p>
-                  <p style={{marginBottom:0}}><strong>Gerenciar quem é ADM:</strong> vá na aba <strong>Usuários</strong> e edite o perfil da pessoa (só ADMs podem fazer isso).</p>
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
