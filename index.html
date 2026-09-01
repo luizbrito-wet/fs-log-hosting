@@ -1321,6 +1321,12 @@ function App({ usuarioAuth, aoSair }) {
   }, [usuarios, usuarioAuth]);
   const isAdm = usuarioAtual ? usuarioAtual.perfil === "ADM" : false;
 
+  // A aba Usuários é exclusiva para perfis ADM.
+  // Se um usuário comum estiver nessa aba por qualquer estado anterior, volta ao Registro.
+  useEffect(() => {
+    if (tab === "usuarios" && !isAdm) setTab("registro");
+  }, [tab, isAdm]);
+
   // Primeiro acesso: cria automaticamente o registro do usuário logado.
   // O primeiro usuário que a base já teve (ou o primeiro a logar numa base vazia) vira ADM.
   useEffect(() => {
@@ -2007,9 +2013,11 @@ function App({ usuarioAuth, aoSair }) {
               <button className={`tab-btn ${tab === "agenda" ? "active" : ""}`} onClick={() => setTab("agenda")}>
                 <CalendarIcon size={15} /> Agenda
               </button>
-              <button className={`tab-btn ${tab === "usuarios" ? "active" : ""}`} onClick={() => setTab("usuarios")}>
-                <UsersIcon size={15} /> Usuários<span className="badge-count">{usuarios.length}</span>
-              </button>
+              {isAdm && (
+                <button className={`tab-btn ${tab === "usuarios" ? "active" : ""}`} onClick={() => setTab("usuarios")}>
+                  <UsersIcon size={15} /> Usuários<span className="badge-count">{usuarios.length}</span>
+                </button>
+              )}
               {podeAcessarCobrancas && (
                 <button className={`tab-btn ${tab === "cobrancas" ? "active" : ""}`} onClick={() => setTab("cobrancas")}>
                   <MailIcon size={15} /> Cobranças
@@ -2215,7 +2223,7 @@ function App({ usuarioAuth, aoSair }) {
           </div>
         )}
 
-        {tab === "usuarios" && (
+        {tab === "usuarios" && isAdm && (
           <div className="card">
             <div className="card-head">
               <div><h2>Usuários</h2><div className="sub">{usuariosFiltrados.length} de {usuarios.length} usuários</div></div>
