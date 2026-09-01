@@ -744,6 +744,12 @@ tbody textarea.inline-edit,
 }
 </style>
 
+
+<style id="multiplos-responsaveis-css">
+  select.responsavel-multi{height:74px;min-height:74px;padding:3px 5px;background-image:none !important;}
+  select.responsavel-multi option{padding:4px 6px;border-radius:4px;}
+  .responsavel-cell{overflow:visible !important;white-space:normal !important;}
+</style>
 </head>
 <body>
 <!-- FS LOG Site SMT · versão consolidada 01/09/2026 -->
@@ -870,6 +876,15 @@ function acaoElegivel(regra, acao, hojeIso) {
   if (dias === null) return false;
   if (regra.tipo === "vencida") return dias < 0;
   return dias >= regra.janela.min && dias <= regra.janela.max;
+}
+function listarResponsaveis(valor) {
+  return String(valor || "")
+    .split(/\s*[\/;,|]\s*/g)
+    .map((n) => n.trim())
+    .filter(Boolean);
+}
+function juntarResponsaveis(nomes) {
+  return Array.from(new Set((nomes || []).map((n) => String(n || "").trim()).filter(Boolean))).join(" / ");
 }
 function buscarEmailPorResponsavel(usuarios, nomeResponsavel) {
   const u = usuarios.find((x) => x.nome.trim().toLowerCase() === (nomeResponsavel || "").trim().toLowerCase());
@@ -1538,7 +1553,10 @@ function App({ usuarioAuth, aoSair }) {
       const acoesElegiveis = acoes.filter((a) => acaoElegivel(regra, a, dataSimulada));
       const porResponsavel = {};
       acoesElegiveis.forEach((a) => {
-        (porResponsavel[a.responsavel] = porResponsavel[a.responsavel] || []).push(a);
+        const nomes = listarResponsaveis(a.responsavel);
+        nomes.forEach((nome) => {
+          (porResponsavel[nome] = porResponsavel[nome] || []).push(a);
+        });
       });
       const grupos = Object.entries(porResponsavel).map(([responsavel, itens]) => {
         const email = buscarEmailPorResponsavel(usuarios, responsavel);
@@ -1705,13 +1723,36 @@ function App({ usuarioAuth, aoSair }) {
     xhr.send(formData);
   }
 
+  function normalizarNomeResponsavel(valor) {
+    return (valor || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim()
+      .toLowerCase();
+  }
+
+  function usuarioEhResponsavelDaAcao(acao) {
+    if (!usuarioAtual || !acao) return false;
+    const meuNome = normalizarNomeResponsavel(usuarioAtual.nome);
+    if (!meuNome) return false;
+    const responsaveis = listarResponsaveis(acao.responsavel)
+      .map(normalizarNomeResponsavel)
+      .filter(Boolean);
+    return responsaveis.includes(meuNome);
+  }
+
   function removerEvidencia(acao, evidencia) {
-    const souDono = evidencia.criadoPor === usuarioAuth.email;
-    if (!isAdm && !souDono) return;
+    if (!usuarioEhResponsavelDaAcao(acao)) {
+      setToast("Você só pode excluir evidências de ações atribuídas ao seu usuário.");
+      setTimeout(() => setToast(null), 3500);
+      return;
+    }
     const ok = window.confirm("Remover esta evidência da ação? (o arquivo continua guardado no Cloudinary, apenas deixa de aparecer aqui)");
     if (!ok) return;
     setAcoes((list) => list.map((a) => a.id === acao.id ? { ...a, evidencias: (a.evidencias || []).filter((e) => e.id !== evidencia.id) } : a));
     if (evidenciaAmpliada && evidenciaAmpliada.id === evidencia.id) setEvidenciaAmpliada(null);
+    setToast("Evidência removida.");
+    setTimeout(() => setToast(null), 2500);
   }
 
   function impedirDigitacaoData(e) {
@@ -1807,7 +1848,7 @@ function App({ usuarioAuth, aoSair }) {
     return acoes.filter((a) => {
       if (filtroStatus && a.status !== filtroStatus) return false;
       if (filtroImportancia && a.importancia !== filtroImportancia) return false;
-      if (filtroResponsavel && a.responsavel !== filtroResponsavel) return false;
+      if (filtroResponsavel && !listarResponsaveis(a.responsavel).includes(filtroResponsavel)) return false;
       if (busca) {
         const alvo = `${a.acao} ${a.descricao} ${a.item} ${a.responsavel}`.toLowerCase();
         if (!alvo.includes(busca.toLowerCase())) return false;
@@ -1824,7 +1865,7 @@ function App({ usuarioAuth, aoSair }) {
         if (chave === "importancia" && a.importancia !== valor) return false;
         if (chave === "status" && a.status !== valor) return false;
         if (chave === "quandoAte" && !fmtBR(a.quandoAte).includes(valor)) return false;
-        if (chave === "responsavel" && a.responsavel !== valor) return false;
+        if (chave === "responsavel" && !listarResponsaveis(a.responsavel).includes(valor)) return false;
         if (chave === "dataConclusao" && !fmtBR(a.dataConclusao).includes(valor)) return false;
         if (chave === "postergar" && (a.postergar || "NÃO") !== valor) return false;
         if (chave === "justificativa" && !String(a.justificativa || "").toLowerCase().includes(valor.toLowerCase())) return false;
@@ -1853,7 +1894,11 @@ function App({ usuarioAuth, aoSair }) {
       imp, label: importanciaLabel(imp), qtd: acoes.filter((a) => a.importancia === imp).length,
     }));
     const porResponsavel = {};
-    acoes.forEach((a) => { porResponsavel[a.responsavel] = (porResponsavel[a.responsavel] || 0) + 1; });
+    acoes.forEach((a) => {
+      listarResponsaveis(a.responsavel).forEach((nome) => {
+        porResponsavel[nome] = (porResponsavel[nome] || 0) + 1;
+      });
+    });
     const rankingResp = Object.entries(porResponsavel).sort((a, b) => b[1] - a[1]).slice(0, 8);
 
     // gráfico: Status x Usuário (série por status, categorias por responsável)
@@ -1864,7 +1909,7 @@ function App({ usuarioAuth, aoSair }) {
       series: STATUS_OPCOES.map((s) => ({
         nome: statusLabel(s),
         cor: statusSeriesCores[s] || "#4fb8e0",
-        data: nomesResp.map((nome) => acoes.filter((a) => a.responsavel === nome && a.status === s).length),
+        data: nomesResp.map((nome) => acoes.filter((a) => listarResponsaveis(a.responsavel).includes(nome) && a.status === s).length),
       })),
     };
 
@@ -2560,14 +2605,13 @@ function App({ usuarioAuth, aoSair }) {
                       </td>
                       <td className="td-compact responsavel-cell">
                         {isAdm ? (
-                          <select className="inline-edit" value={a.responsavel || ""}
+                          <select className="inline-edit responsavel-multi" multiple size="3" value={listarResponsaveis(a.responsavel)}
                             onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => atualizarCampoInline(a.id, "responsavel", e.target.value)}
-                            style={{ cursor: "pointer", width: "100%" }}>
-                            <option value="">Selecione...</option>
-                            {a.responsavel && !usuarios.some((u) => u.nome === a.responsavel) && (
-                              <option value={a.responsavel}>{a.responsavel}</option>
-                            )}
+                            onChange={(e) => atualizarCampoInline(a.id, "responsavel", juntarResponsaveis(Array.from(e.target.selectedOptions).map((o) => o.value)))}
+                            style={{ cursor: "pointer", width: "100%" }} title="Selecione um ou mais responsáveis (Ctrl para múltiplos no Windows)">
+                            {listarResponsaveis(a.responsavel).filter((nome) => !usuarios.some((u) => u.nome === nome)).map((nome) => (
+                              <option key={`legado-${nome}`} value={nome}>{nome}</option>
+                            ))}
                             {usuarios
                               .slice()
                               .sort((u1, u2) => (u1.nome || "").localeCompare(u2.nome || "", "pt-BR"))
@@ -2714,10 +2758,15 @@ function App({ usuarioAuth, aoSair }) {
                 )}
 
                 <div className="field campo-bloqueado"><label>Responsável <span className="req">*</span></label>
-                  <select value={form.responsavel} disabled={camposBloqueados} onChange={(e) => setForm({ ...form, responsavel: e.target.value })}>
-                    <option value="">Selecione…</option>
-                    {usuarios.map((u) => <option key={u.id} value={u.nome}>{u.nome}</option>)}
+                  <select multiple size="6" value={listarResponsaveis(form.responsavel)} disabled={camposBloqueados}
+                    onChange={(e) => setForm({ ...form, responsavel: juntarResponsaveis(Array.from(e.target.selectedOptions).map((o) => o.value)) })}
+                    title="Selecione um ou mais responsáveis (Ctrl para múltiplos no Windows)">
+                    {listarResponsaveis(form.responsavel).filter((nome) => !usuarios.some((u) => u.nome === nome)).map((nome) => (
+                      <option key={`legado-form-${nome}`} value={nome}>{nome}</option>
+                    ))}
+                    {usuarios.slice().sort((u1,u2) => (u1.nome || "").localeCompare(u2.nome || "", "pt-BR")).map((u) => <option key={u.id} value={u.nome}>{u.nome}</option>)}
                   </select>
+                  {!camposBloqueados && <div style={{ fontSize: 12, color: "var(--text-faint)", marginTop: 6 }}>Você pode selecionar mais de um responsável. No Windows, mantenha Ctrl pressionado ao clicar nos nomes.</div>}
                   {usuarios.length === 0 && (
                     <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginTop: 6 }}>
                       Nenhum usuário cadastrado. <button type="button" className="btn-ghost" style={{ padding: "2px 8px" }} onClick={() => { setModalAberto(false); setTab("usuarios"); abrirNovoUsuario(); }}>Cadastrar responsável</button>
@@ -2930,8 +2979,8 @@ function App({ usuarioAuth, aoSair }) {
                   <div className="evid-item" key={ev.id} onClick={() => setEvidenciaAmpliada(ev)}>
                     {ev.tipo === "imagem" ? <img src={ev.url} alt={ev.nome} /> : <video src={ev.url} muted />}
                     {ev.tipo === "video" && <span className="evid-item-video-marker"><VideoIcon size={11} /></span>}
-                    {(isAdm || ev.criadoPor === usuarioAuth.email) && (
-                      <button className="evid-item-del" onClick={(e) => { e.stopPropagation(); removerEvidencia(acaoEvidencias, ev); }}><TrashIcon size={11} /></button>
+                    {usuarioEhResponsavelDaAcao(acaoEvidencias) && (
+                      <button className="evid-item-del" title="Excluir evidência" onClick={(e) => { e.stopPropagation(); removerEvidencia(acaoEvidencias, ev); }}><TrashIcon size={11} /></button>
                     )}
                   </div>
                 ))}
