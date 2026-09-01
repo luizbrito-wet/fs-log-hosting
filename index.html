@@ -1156,6 +1156,10 @@ function GroupedBarChart({ labels, series, isLight }) {
 
 function App({ usuarioAuth, aoSair }) {
   const [tab, setTab] = useState("registro");
+  const podeAcessarCobrancas = (usuarioAuth?.email || "").trim().toLowerCase() === "luiz.brito@fs.agr.br";
+  useEffect(() => {
+    if (tab === "cobrancas" && !podeAcessarCobrancas) setTab("registro");
+  }, [tab, podeAcessarCobrancas]);
   const [tema, setTema] = useState(() => localStorage.getItem("plano5w2h_tema") || "escuro");
   useEffect(() => {
     document.body.classList.toggle("light", tema === "claro");
@@ -2006,9 +2010,11 @@ function App({ usuarioAuth, aoSair }) {
               <button className={`tab-btn ${tab === "usuarios" ? "active" : ""}`} onClick={() => setTab("usuarios")}>
                 <UsersIcon size={15} /> Usuários<span className="badge-count">{usuarios.length}</span>
               </button>
-              <button className={`tab-btn ${tab === "cobrancas" ? "active" : ""}`} onClick={() => setTab("cobrancas")}>
-                <MailIcon size={15} /> Cobranças
-              </button>
+              {podeAcessarCobrancas && (
+                <button className={`tab-btn ${tab === "cobrancas" ? "active" : ""}`} onClick={() => setTab("cobrancas")}>
+                  <MailIcon size={15} /> Cobranças
+                </button>
+              )}
             </div>
             <button className="usuario-atual-btn" onClick={() => auth.signOut()} title="Clique para sair da conta">
               <UserIcon size={14} />
@@ -2258,7 +2264,7 @@ function App({ usuarioAuth, aoSair }) {
           </div>
         )}
 
-        {tab === "cobrancas" && (
+        {tab === "cobrancas" && podeAcessarCobrancas && (
           <div>
             <div className="cobranca-info">
               <InfoIcon size={18} />
