@@ -1649,8 +1649,23 @@ function App({ usuarioAuth, aoSair }) {
   const [buscaSubAcao, setBuscaSubAcao] = useState("");
   const [subAcaoDe, setSubAcaoDe] = useState(null); // ação-pai escolhida, para mostrar contexto no formulário
 
+  function proximoItemNovaAcao() {
+    if (!acoes.length) return "1";
+    const ultimo = acoes[acoes.length - 1];
+    const texto = String(ultimo?.item || "").trim();
+    const match = texto.match(/^(\d+)/);
+    if (match) return String(Number(match[1]) + 1);
+
+    // Fallback: se o ultimo item nao tiver formato numerico, procura o maior prefixo numerico existente.
+    const maior = acoes.reduce((max, a) => {
+      const m = String(a?.item || "").trim().match(/^(\d+)/);
+      return m ? Math.max(max, Number(m[1])) : max;
+    }, 0);
+    return String(maior + 1);
+  }
+
   function abrirNova() {
-    setForm({ ...CAMPOS_VAZIOS, responsavel: usuarios[0]?.nome || "" });
+    setForm({ ...CAMPOS_VAZIOS, item: proximoItemNovaAcao(), responsavel: usuarios[0]?.nome || "" });
     setEditando(null);
     setSubAcaoDe(null);
     setErro("");
@@ -1839,8 +1854,9 @@ function App({ usuarioAuth, aoSair }) {
       setAcoes((list) => list.map((a) => a.id === editando ? { ...dadosForm, id: editando } : a));
       setToast("Ação atualizada.");
     } else {
-      const novoItem = String(acoes.length + 1);
-      setAcoes((list) => [{ ...dadosForm, id: `ACT-${Date.now()}`, item: dadosForm.item || novoItem }, ...list]);
+      const novoItem = dadosForm.item || proximoItemNovaAcao();
+      // Novas acoes entram sempre no fim da tabela, preservando a ordem cronologica de cadastro.
+      setAcoes((list) => [...list, { ...dadosForm, id: `ACT-${Date.now()}`, item: novoItem }]);
       setToast("Ação registrada.");
     }
     setModalAberto(false);
