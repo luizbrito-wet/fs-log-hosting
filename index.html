@@ -746,9 +746,21 @@ tbody textarea.inline-edit,
 
 
 <style id="multiplos-responsaveis-css">
-  select.responsavel-multi{height:74px;min-height:74px;padding:3px 5px;background-image:none !important;}
-  select.responsavel-multi option{padding:4px 6px;border-radius:4px;}
-  .responsavel-cell{overflow:visible !important;white-space:normal !important;}
+  .responsavel-cell{overflow:visible !important;white-space:normal !important;position:relative;}
+  .resp-picker{position:relative;width:100%;}
+  .resp-picker > summary{list-style:none;cursor:pointer;width:100%;min-height:32px;padding:7px 28px 7px 9px;
+    border:1px solid var(--border);border-radius:7px;background:var(--panel-2);color:var(--text);font-size:12.5px;
+    line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;}
+  .resp-picker > summary::-webkit-details-marker{display:none;}
+  .resp-picker > summary:after{content:"▾";position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--accent);font-size:12px;}
+  .resp-picker[open] > summary{border-color:var(--blue);box-shadow:0 0 0 2px rgba(59,130,246,.10);}
+  .resp-picker-menu{position:absolute;z-index:80;top:calc(100% + 4px);left:0;width:max(260px,100%);max-width:360px;
+    max-height:260px;overflow-y:auto;background:var(--panel);border:1px solid var(--border);border-radius:9px;
+    box-shadow:0 10px 28px rgba(0,0,0,.28);padding:6px;}
+  .resp-picker-option{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:12.5px;color:var(--text);}
+  .resp-picker-option:hover{background:var(--panel-2);}
+  .resp-picker-option input{width:15px;height:15px;flex:0 0 auto;accent-color:var(--accent);}
+  .resp-picker-empty{color:var(--text-faint);}
 </style>
 </head>
 <body>
@@ -2605,18 +2617,32 @@ function App({ usuarioAuth, aoSair }) {
                       </td>
                       <td className="td-compact responsavel-cell">
                         {isAdm ? (
-                          <select className="inline-edit responsavel-multi" multiple size="3" value={listarResponsaveis(a.responsavel)}
-                            onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => atualizarCampoInline(a.id, "responsavel", juntarResponsaveis(Array.from(e.target.selectedOptions).map((o) => o.value)))}
-                            style={{ cursor: "pointer", width: "100%" }} title="Selecione um ou mais responsáveis (Ctrl para múltiplos no Windows)">
-                            {listarResponsaveis(a.responsavel).filter((nome) => !usuarios.some((u) => u.nome === nome)).map((nome) => (
-                              <option key={`legado-${nome}`} value={nome}>{nome}</option>
-                            ))}
-                            {usuarios
-                              .slice()
-                              .sort((u1, u2) => (u1.nome || "").localeCompare(u2.nome || "", "pt-BR"))
-                              .map((u) => <option key={u.id} value={u.nome}>{u.nome}</option>)}
-                          </select>
+                          <details className="resp-picker" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+                            <summary title={a.responsavel || "Selecione um ou mais responsáveis"}>
+                              {a.responsavel || <span className="resp-picker-empty">Selecionar responsável</span>}
+                            </summary>
+                            <div className="resp-picker-menu">
+                              {Array.from(new Set([
+                                ...listarResponsaveis(a.responsavel),
+                                ...usuarios.slice().sort((u1, u2) => (u1.nome || "").localeCompare(u2.nome || "", "pt-BR")).map((u) => u.nome)
+                              ])).filter(Boolean).map((nome) => {
+                                const selecionados = listarResponsaveis(a.responsavel);
+                                const marcado = selecionados.includes(nome);
+                                return (
+                                  <label className="resp-picker-option" key={nome}>
+                                    <input type="checkbox" checked={marcado}
+                                      onChange={(e) => {
+                                        const proximos = e.target.checked
+                                          ? [...selecionados, nome]
+                                          : selecionados.filter((n) => n !== nome);
+                                        atualizarCampoInline(a.id, "responsavel", juntarResponsaveis(proximos));
+                                      }} />
+                                    <span>{nome}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </details>
                         ) : (
                           <span>{a.responsavel || "—"}</span>
                         )}
