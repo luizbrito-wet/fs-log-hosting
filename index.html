@@ -13,6 +13,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
@@ -835,7 +837,7 @@ const SEED_USUARIOS = [
   { id: "US-16", nome: "Tayres Gomes da Silva", email: "tayres.silva@fs.agr.br", funcao: "Colaborador", perfil: "USER" },
 ];
 
-const CAMPOS_PROTEGIDOS_ADM = ["data", "origem", "acao", "descricao", "fup", "dataStart", "importancia", "quandoAte", "responsavel", "dataConclusao", "postergar", "justificativa", "eficacia"];
+const CAMPOS_PROTEGIDOS_ADM = ["data", "origem", "acao", "descricao", "dataStart", "importancia", "responsavel"];
 
 
 /* ---------- Regras de Cobrança por E-mail ---------- */
@@ -1024,6 +1026,7 @@ const ImageIcon = (p) => <Icon {...p}><rect x="3" y="3" width="18" height="18" r
 const VideoIcon = (p) => <Icon {...p}><rect x="2" y="5" width="15" height="14" rx="2"/><path d="M17 10l5-3v10l-5-3"/></Icon>;
 const UploadIcon = (p) => <Icon {...p}><path d="M12 3v12M7 8l5-5 5 5"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></Icon>;
 const MailIcon = (p) => <Icon {...p}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 6l10 7 10-7"/></Icon>;
+const FileTextIcon = (p) => <Icon {...p}><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h8M9 17h8"/></Icon>;
 const InfoIcon = (p) => <Icon {...p}><circle cx="12" cy="12" r="10"/><path d="M12 16v-5M12 8h.01"/></Icon>;
 
 const CAMPOS_VAZIOS = {
@@ -1156,7 +1159,12 @@ function GroupedBarChart({ labels, series, isLight }) {
 
 function App({ usuarioAuth, aoSair }) {
   const [tab, setTab] = useState("registro");
-  const podeAcessarCobrancas = (usuarioAuth?.email || "").trim().toLowerCase() === "luiz.brito@fs.agr.br";
+  const EMAILS_COBRANCAS = new Set([
+    "luiz.brito@fs.agr.br",
+    "sergio.leitao@fs.agr.br",
+    "joao.franco@fs.agr.br",
+  ]);
+  const podeAcessarCobrancas = EMAILS_COBRANCAS.has((usuarioAuth?.email || "").trim().toLowerCase());
   useEffect(() => {
     if (tab === "cobrancas" && !podeAcessarCobrancas) setTab("registro");
   }, [tab, podeAcessarCobrancas]);
@@ -1472,8 +1480,8 @@ function App({ usuarioAuth, aoSair }) {
   }
 
   async function dispararGrupoPowerAutomate(regra, grupo) {
-    if (!isAdm) {
-      setToast("Apenas usuários ADM podem disparar cobranças automáticas.");
+    if (!podeAcessarCobrancas) {
+      setToast("Seu usuário não possui permissão para disparar cobranças automáticas.");
       setTimeout(() => setToast(null), 3000);
       return;
     }
@@ -1500,8 +1508,8 @@ function App({ usuarioAuth, aoSair }) {
   }
 
   async function dispararTodasCobrancas() {
-    if (!isAdm) {
-      setToast("Apenas usuários ADM podem disparar cobranças automáticas.");
+    if (!podeAcessarCobrancas) {
+      setToast("Seu usuário não possui permissão para disparar cobranças automáticas.");
       setTimeout(() => setToast(null), 3000);
       return;
     }
@@ -1672,6 +1680,11 @@ function App({ usuarioAuth, aoSair }) {
     setModalAberto(true);
   }
   function abrirEdicao(acao) {
+    if (!isAdm && !usuarioEhResponsavelDaAcao(acao)) {
+      setToast("Você só pode editar ações em que é responsável ou um dos responsáveis.");
+      setTimeout(() => setToast(null), 3500);
+      return;
+    }
     setForm({ ...CAMPOS_VAZIOS, ...acao });
     setEditando(acao.id);
     setSubAcaoDe(null);
@@ -1681,7 +1694,17 @@ function App({ usuarioAuth, aoSair }) {
   function fecharModal() { setModalAberto(false); }
 
   function atualizarCampoInline(id, campo, valor) {
-    if (!isAdm) return;
+    const acao = acoes.find((a) => a.id === id);
+    if (!acao) return;
+    if (!isAdm) {
+      if (!usuarioEhResponsavelDaAcao(acao)) {
+        setToast("Você só pode alterar ações atribuídas ao seu usuário.");
+        setTimeout(() => setToast(null), 3000);
+        return;
+      }
+      // USER pode preencher o Detalhamento somente quando o campo ainda estiver vazio.
+      if (campo !== "descricao" || String(acao.descricao || "").trim()) return;
+    }
     setAcoes((list) => list.map((a) => a.id === id ? { ...a, [campo]: valor } : a));
     setToast("Alteração salva.");
     setTimeout(() => setToast(null), 1200);
@@ -1845,8 +1868,16 @@ function App({ usuarioAuth, aoSair }) {
 
     if (editando && !isAdm) {
       const original = acoes.find((a) => a.id === editando);
+      if (!original || !usuarioEhResponsavelDaAcao(original)) {
+        setErro("Você só pode editar ações em que é responsável ou um dos responsáveis.");
+        return;
+      }
       if (original) {
-        CAMPOS_PROTEGIDOS_ADM.forEach((campo) => { dadosForm[campo] = original[campo]; });
+        CAMPOS_PROTEGIDOS_ADM.forEach((campo) => {
+          // Exceção: se Detalhamento ainda estiver vazio, o responsável pode preenchê-lo uma única vez.
+          if (campo === "descricao" && !String(original.descricao || "").trim()) return;
+          dadosForm[campo] = original[campo];
+        });
       }
     }
 
@@ -1880,7 +1911,16 @@ function App({ usuarioAuth, aoSair }) {
     ));
   }
 
-  const camposBloqueados = !!editando && !isAdm;
+  const acaoEmEdicao = editando ? acoes.find((a) => a.id === editando) : null;
+  const userPodeEditarAcaoAtual = !editando || isAdm || usuarioEhResponsavelDaAcao(acaoEmEdicao);
+  const camposBloqueados = !!editando && !isAdm && userPodeEditarAcaoAtual;
+  const campoBloqueadoParaUser = (campo) => {
+    if (!editando || isAdm) return false;
+    if (!userPodeEditarAcaoAtual) return true;
+    if (!CAMPOS_PROTEGIDOS_ADM.includes(campo)) return false;
+    if (campo === "descricao" && acaoEmEdicao && !String(acaoEmEdicao.descricao || "").trim()) return false;
+    return true;
+  };
 
   const acoesFiltradas = useMemo(() => {
     return acoes.filter((a) => {
@@ -1984,6 +2024,80 @@ function App({ usuarioAuth, aoSair }) {
     };
   }, [acoes]);
 
+  function dadosRelatorioAcoes() {
+    return acoes.map((a) => ({
+      "ID": a.id || "",
+      "Item": a.item || "",
+      "Data de Registro": a.data ? fmtBR(a.data) : "",
+      "Evento": a.origem || "",
+      "Ação": a.acao || "",
+      "Detalhamento | Como Executar": a.descricao || "",
+      "O que foi feito (FUP)": a.fup || "",
+      "Evidências": (a.evidencias || []).map((e) => e.url || e.nome || "").filter(Boolean).join(" | "),
+      "Data (Start)": a.dataStart ? fmtBR(a.dataStart) : "",
+      "Importância": importanciaLabel(a.importancia || ""),
+      "Status": statusLabel(a.status || ""),
+      "Quando? (Até)": a.quandoAte ? fmtBR(a.quandoAte) : "",
+      "Responsável": a.responsavel || "",
+      "Data de Conclusão": a.dataConclusao ? fmtBR(a.dataConclusao) : "",
+      "Tempo Ação Aberta (dias)": diasAbertos(a) ?? "",
+      "Postergar": a.postergar || "",
+      "Justificativa": a.justificativa || "",
+      "Eficácia": a.eficacia || "",
+    }));
+  }
+
+  function baixarArquivo(blob, nome) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  function exportarExcel() {
+    const dados = dadosRelatorioAcoes();
+    const cols = dados.length ? Object.keys(dados[0]) : [];
+    const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+    const tabela = `<table border="1"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${dados.map((r) => `<tr>${cols.map((c) => `<td>${esc(r[c])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    const html = `<!doctype html><html><head><meta charset="UTF-8"></head><body>${tabela}</body></html>`;
+    baixarArquivo(new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" }), `FS_LOG_Base_Completa_${hojeISO()}.xls`);
+    setToast("Base completa exportada para Excel.");
+    setTimeout(() => setToast(null), 2500);
+  }
+
+  function exportarPDF() {
+    const dados = dadosRelatorioAcoes();
+    try {
+      const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
+      if (!jsPDFCtor) throw new Error("Biblioteca de PDF não carregada");
+      const doc = new jsPDFCtor({ orientation: "landscape", unit: "mm", format: "a3" });
+      doc.setFontSize(14);
+      doc.text("FS LOG Site SMT | Base Completa de Ações", 14, 12);
+      doc.setFontSize(8);
+      doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")} | Total: ${dados.length} ações`, 14, 18);
+      const colunas = ["Item","Data de Registro","Evento","Ação","Detalhamento | Como Executar","O que foi feito (FUP)","Data (Start)","Importância","Status","Quando? (Até)","Responsável","Data de Conclusão","Postergar","Justificativa","Eficácia"];
+      doc.autoTable({
+        startY: 22,
+        head: [colunas],
+        body: dados.map((r) => colunas.map((c) => r[c])),
+        styles: { fontSize: 5.2, cellPadding: 1.1, overflow: "linebreak", valign: "top" },
+        headStyles: { fontSize: 5.5 },
+        margin: { left: 7, right: 7 },
+        tableWidth: "auto",
+      });
+      doc.save(`FS_LOG_Base_Completa_${hojeISO()}.pdf`);
+      setToast("Base completa exportada para PDF.");
+      setTimeout(() => setToast(null), 2500);
+    } catch (err) {
+      setToast("Não foi possível gerar o PDF. Verifique a conexão e tente novamente.");
+      setTimeout(() => setToast(null), 3500);
+    }
+  }
+
   return (
     <div className="app">
       <div className="shell">
@@ -2028,6 +2142,9 @@ function App({ usuarioAuth, aoSair }) {
               </button>
               <button className={`tab-btn ${tab === "agenda" ? "active" : ""}`} onClick={() => setTab("agenda")}>
                 <CalendarIcon size={15} /> Agenda
+              </button>
+              <button className={`tab-btn ${tab === "relatorios" ? "active" : ""}`} onClick={() => setTab("relatorios")}>
+                <FileTextIcon size={15} /> Relatórios
               </button>
               {isAdm && (
                 <button className={`tab-btn ${tab === "usuarios" ? "active" : ""}`} onClick={() => setTab("usuarios")}>
@@ -2316,22 +2433,22 @@ function App({ usuarioAuth, aoSair }) {
                       type="text"
                       placeholder="Cole aqui a URL gerada pelo gatilho HTTP do Power Automate"
                       value={powerAutomateUrl}
-                      onChange={(e) => isAdm && setPowerAutomateUrl(e.target.value)}
-                      disabled={!isAdm}
+                      onChange={(e) => podeAcessarCobrancas && setPowerAutomateUrl(e.target.value)}
+                      disabled={!podeAcessarCobrancas}
                     />
                   </div>
                   <div className="pa-actions">
                     <button className="btn-ghost" onClick={copiarExemploPowerAutomate}>Copiar JSON de exemplo</button>
-                    <button className="btn-primary" onClick={dispararTodasCobrancas} disabled={!isAdm || enviandoCobrancas}>
+                    <button className="btn-primary" onClick={dispararTodasCobrancas} disabled={!podeAcessarCobrancas || enviandoCobrancas}>
                       <MailIcon size={15} /> {enviandoCobrancas ? "Enviando..." : "Disparar cobranças"}
                     </button>
                   </div>
                 </div>
                 <div className="pa-note">
-                  {isAdm ? (
-                    <span><strong>ADM:</strong> a URL fica salva somente neste navegador. O disparo em lote considera apenas as <strong>regras ativas na data selecionada</strong> e responsáveis com e-mail cadastrado.</span>
+                  {podeAcessarCobrancas ? (
+                    <span><strong>Envio autorizado:</strong> a URL fica salva somente neste navegador. O disparo em lote considera apenas as <strong>regras ativas na data selecionada</strong> e responsáveis com e-mail cadastrado.</span>
                   ) : (
-                    <span><LockIcon size={12} style={{ verticalAlign: "-2px" }} /> Apenas usuários ADM podem configurar ou disparar cobranças automáticas.</span>
+                    <span><LockIcon size={12} style={{ verticalAlign: "-2px" }} /> Seu usuário não possui permissão para configurar ou disparar cobranças automáticas.</span>
                   )}
                 </div>
 
@@ -2427,7 +2544,7 @@ function App({ usuarioAuth, aoSair }) {
                         <>
                           <button
                             className="btn-auto"
-                            disabled={!isAdm || grupoEnviando === `${regra.id}|${g.responsavel}`}
+                            disabled={!podeAcessarCobrancas || grupoEnviando === `${regra.id}|${g.responsavel}`}
                             onClick={() => dispararGrupoPowerAutomate(regra, g)}
                             title={isAdm ? "Enviar diretamente pelo Power Automate" : "Apenas ADM pode enviar automaticamente"}
                           >
@@ -2453,6 +2570,38 @@ function App({ usuarioAuth, aoSair }) {
                 ))}
               </div>
             ))}
+          </div>
+        )}
+
+        {tab === "relatorios" && (
+          <div className="card">
+            <div className="card-head">
+              <div>
+                <h2>Relatórios</h2>
+                <div className="sub">Exportação da base completa de ações registradas</div>
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button className="btn-primary" onClick={exportarExcel}><FileTextIcon size={15} /> Exportar Excel</button>
+                <button className="btn-ghost" onClick={exportarPDF}><FileTextIcon size={15} /> Exportar PDF</button>
+              </div>
+            </div>
+            <div style={{ padding: "14px 18px 18px", color: "var(--text-dim)", fontSize: 13.5 }}>
+              A exportação considera <strong>{acoes.length}</strong> ação(ões) e inclui todos os campos da base, responsáveis, datas, status, FUP, justificativa, eficácia e referências das evidências.
+            </div>
+            <div className="tbl-wrap" style={{ maxHeight: 520 }}>
+              <table>
+                <thead><tr><th>Item</th><th>Data</th><th>Evento</th><th>Ação</th><th>Status</th><th>Responsável</th><th>Quando? (Até)</th></tr></thead>
+                <tbody>
+                  {acoes.map((a) => (
+                    <tr key={`rel-${a.id}`}>
+                      <td>{a.item || "—"}</td><td>{a.data ? fmtBR(a.data) : "—"}</td><td>{a.origem || "—"}</td>
+                      <td className="wrap-cell"><span className="wrap-box">{a.acao || "—"}</span></td>
+                      <td>{statusLabel(a.status || "")}</td><td>{a.responsavel || "—"}</td><td>{a.quandoAte ? fmtBR(a.quandoAte) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -2586,7 +2735,14 @@ function App({ usuarioAuth, aoSair }) {
                           onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
                           onBlur={(e) => atualizarCampoInline(a.id, "acao", e.target.value)} />
                       ) : <span className="acao-title">{a.acao}</span>}</td>
-                      <td className="wrap-cell detalhe-cell">{a.descricao ? <span className="wrap-box detalhe-scroll" title="Use a roda do mouse ou a barra lateral para ler todo o detalhamento / como executar">{a.descricao}</span> : <span className="cell-empty">—</span>}</td>
+                      <td className="wrap-cell detalhe-cell">{a.descricao ? (
+                        <span className="wrap-box detalhe-scroll" title="Use a roda do mouse ou a barra lateral para ler todo o detalhamento / como executar">{a.descricao}</span>
+                      ) : ((isAdm || usuarioEhResponsavelDaAcao(a)) ? (
+                        <textarea className="inline-edit detalhe-edit-vazio" defaultValue=""
+                          placeholder="Preencher detalhamento..."
+                          onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
+                          onBlur={(e) => { const v = e.target.value.trim(); if (v) atualizarCampoInline(a.id, "descricao", v); }} />
+                      ) : <span className="cell-empty">—</span>)}</td>
                       <td className="wrap-cell fup-cell">{isAdm ? (
                         <textarea className="inline-edit fup-edit" defaultValue={a.fup || ""}
                           onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}
@@ -2703,9 +2859,14 @@ function App({ usuarioAuth, aoSair }) {
                       ) : (a.eficacia ? <span className="wrap-box">{a.eficacia}</span> : <span className="cell-empty">—</span>)}</td>
                       <td className="td-compact">
                         {isAdm ? (
-                          <button className="btn-ghost" onClick={(e) => { e.stopPropagation(); excluir(a); }}><TrashIcon size={13} /></button>
+                          <>
+                            <button className="btn-ghost" onClick={(e) => { e.stopPropagation(); abrirEdicao(a); }} title="Editar ação" style={{ marginRight: 6 }}><PencilIcon size={13} /></button>
+                            <button className="btn-ghost" onClick={(e) => { e.stopPropagation(); excluir(a); }} title="Excluir ação"><TrashIcon size={13} /></button>
+                          </>
+                        ) : usuarioEhResponsavelDaAcao(a) ? (
+                          <button className="btn-ghost" onClick={(e) => { e.stopPropagation(); abrirEdicao(a); }} title="Editar minha ação"><PencilIcon size={13} /></button>
                         ) : (
-                          <span className="btn-ghost" style={{ opacity: 0.4, cursor: "not-allowed" }} title="Apenas ADM pode excluir"><LockIcon size={12} /></span>
+                          <span className="btn-ghost" style={{ opacity: 0.4, cursor: "not-allowed" }} title="Você não é responsável por esta ação"><LockIcon size={12} /></span>
                         )}
                       </td>
                     </tr>
@@ -2740,12 +2901,12 @@ function App({ usuarioAuth, aoSair }) {
                     <input type="text" placeholder="ex: 4.1" value={form.item} onChange={(e) => setForm({ ...form, item: e.target.value })} />
                   </div>
                   <div className="field campo-bloqueado"><label>Data de Registro</label>
-                    <input type="date" value={form.data} disabled={camposBloqueados} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, data: e.target.value })} />
+                    <input type="date" value={form.data} disabled={campoBloqueadoParaUser("data")} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, data: e.target.value })} />
                   </div>
                   <div className="field campo-bloqueado"><label>Evento</label>
                     <select
                       value={ORIGENS.includes(form.origem) ? form.origem : "Outro"}
-                      disabled={camposBloqueados}
+                      disabled={campoBloqueadoParaUser("origem")}
                       onChange={(e) => setForm({ ...form, origem: e.target.value === "Outro" ? "" : e.target.value })}
                     >
                       {ORIGENS.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -2755,7 +2916,7 @@ function App({ usuarioAuth, aoSair }) {
                         type="text"
                         placeholder="Especifique o evento"
                         value={form.origem}
-                        disabled={camposBloqueados}
+                        disabled={campoBloqueadoParaUser("origem")}
                         onChange={(e) => setForm({ ...form, origem: e.target.value })}
                         style={{ marginTop: 8 }}
                         autoFocus
@@ -2765,25 +2926,25 @@ function App({ usuarioAuth, aoSair }) {
                 </div>
 
                 <div className="field campo-bloqueado"><label>Ação <span className="req">*</span></label>
-                  <textarea placeholder="O que precisa ser feito?" value={form.acao} disabled={camposBloqueados} onChange={(e) => setForm({ ...form, acao: e.target.value })} />
+                  <textarea placeholder="O que precisa ser feito?" value={form.acao} disabled={campoBloqueadoParaUser("acao")} onChange={(e) => setForm({ ...form, acao: e.target.value })} />
                 </div>
                 <div className="field campo-bloqueado"><label>Detalhamento | Como executar</label>
-                  <textarea placeholder="Detalhes adicionais, notas de contexto…" value={form.descricao} disabled={camposBloqueados} onChange={(e) => setForm({ ...form, descricao: e.target.value })} />
+                  <textarea placeholder="Detalhes adicionais, notas de contexto…" value={form.descricao} disabled={campoBloqueadoParaUser("descricao")} onChange={(e) => setForm({ ...form, descricao: e.target.value })} />
                 </div>
                 <div className="field campo-bloqueado"><label>O que foi feito (FUP)</label>
-                  <textarea placeholder="Acompanhamento / follow-up do que já foi realizado" value={form.fup} disabled={camposBloqueados} onChange={(e) => setForm({ ...form, fup: e.target.value })} />
+                  <textarea placeholder="Acompanhamento / follow-up do que já foi realizado" value={form.fup} onChange={(e) => setForm({ ...form, fup: e.target.value })} />
                 </div>
 
                 {camposBloqueados && (
                   <div className="campo-bloqueado-aviso" style={{ marginBottom: 14 }}>
                     <LockIcon size={12} />
-                    Data, Evento, Ação, Detalhamento, FUP, Data (Start), Importância, Quando? (Até), Responsável, Data de Conclusão, Postergar, Justificativa e Eficácia só podem ser editados por um usuário ADM.
+                    Você pode atualizar somente ações em que seja responsável ou um dos responsáveis. Data, Evento, Ação, Data (Start), Importância e Responsável são restritos ao ADM. O Detalhamento | Como Executar pode ser preenchido pelo responsável apenas enquanto estiver vazio; depois disso fica bloqueado para USER.
                   </div>
                 )}
 
                 <div className="grid2">
                   <div className="field campo-bloqueado"><label>Importância</label>
-                    <select value={form.importancia} disabled={camposBloqueados} onChange={(e) => setForm({ ...form, importancia: e.target.value })}>
+                    <select value={form.importancia} disabled={campoBloqueadoParaUser("importancia")} onChange={(e) => setForm({ ...form, importancia: e.target.value })}>
                       {IMPORTANCIAS.map((i) => <option key={i} value={i}>{importanciaLabel(i)}</option>)}
                     </select>
                   </div>
@@ -2796,13 +2957,13 @@ function App({ usuarioAuth, aoSair }) {
 
                 <div className="grid3">
                   <div className="field campo-bloqueado"><label>Data (Start)</label>
-                    <input type="date" value={form.dataStart} disabled={camposBloqueados} onChange={(e) => setForm({ ...form, dataStart: e.target.value })} />
+                    <input type="date" value={form.dataStart} disabled={campoBloqueadoParaUser("dataStart")} onChange={(e) => setForm({ ...form, dataStart: e.target.value })} />
                   </div>
                   <div className="field campo-bloqueado"><label>Quando? (Até)</label>
-                    <input type="date" value={form.quandoAte} disabled={camposBloqueados} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, quandoAte: e.target.value })} />
+                    <input type="date" value={form.quandoAte} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, quandoAte: e.target.value })} />
                   </div>
                   <div className="field campo-bloqueado"><label>Data de Conclusão</label>
-                    <input type="date" value={form.dataConclusao} disabled={camposBloqueados} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, dataConclusao: e.target.value })} />
+                    <input type="date" value={form.dataConclusao} onKeyDown={(e) => e.preventDefault()} onPaste={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()} onClick={(e) => { if (!e.currentTarget.disabled && e.currentTarget.showPicker) e.currentTarget.showPicker(); }} onChange={(e) => setForm({ ...form, dataConclusao: e.target.value })} />
                   </div>
                 </div>
 
@@ -2814,7 +2975,7 @@ function App({ usuarioAuth, aoSair }) {
                 )}
 
                 <div className="field campo-bloqueado"><label>Responsável <span className="req">*</span></label>
-                  <select multiple size="6" value={listarResponsaveis(form.responsavel)} disabled={camposBloqueados}
+                  <select multiple size="6" value={listarResponsaveis(form.responsavel)} disabled={campoBloqueadoParaUser("responsavel")}
                     onChange={(e) => setForm({ ...form, responsavel: juntarResponsaveis(Array.from(e.target.selectedOptions).map((o) => o.value)) })}
                     title="Selecione um ou mais responsáveis (Ctrl para múltiplos no Windows)">
                     {listarResponsaveis(form.responsavel).filter((nome) => !usuarios.some((u) => u.nome === nome)).map((nome) => (
@@ -2822,7 +2983,7 @@ function App({ usuarioAuth, aoSair }) {
                     ))}
                     {usuarios.slice().sort((u1,u2) => (u1.nome || "").localeCompare(u2.nome || "", "pt-BR")).map((u) => <option key={u.id} value={u.nome}>{u.nome}</option>)}
                   </select>
-                  {!camposBloqueados && <div style={{ fontSize: 12, color: "var(--text-faint)", marginTop: 6 }}>Você pode selecionar mais de um responsável. No Windows, mantenha Ctrl pressionado ao clicar nos nomes.</div>}
+                  {!campoBloqueadoParaUser("responsavel") && <div style={{ fontSize: 12, color: "var(--text-faint)", marginTop: 6 }}>Você pode selecionar mais de um responsável. No Windows, mantenha Ctrl pressionado ao clicar nos nomes.</div>}
                   {usuarios.length === 0 && (
                     <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginTop: 6 }}>
                       Nenhum usuário cadastrado. <button type="button" className="btn-ghost" style={{ padding: "2px 8px" }} onClick={() => { setModalAberto(false); setTab("usuarios"); abrirNovoUsuario(); }}>Cadastrar responsável</button>
@@ -2832,18 +2993,18 @@ function App({ usuarioAuth, aoSair }) {
 
                 <div className="grid2">
                   <div className="field campo-bloqueado"><label>Necessário Postergar?</label>
-                    <select value={form.postergar} disabled={camposBloqueados} onChange={(e) => setForm({ ...form, postergar: e.target.value })}>
+                    <select value={form.postergar} onChange={(e) => setForm({ ...form, postergar: e.target.value })}>
                       <option value="NÃO">NÃO</option>
                       <option value="SIM">SIM</option>
                     </select>
                   </div>
                   <div className="field campo-bloqueado"><label>Justificativa do Postergamento</label>
-                    <input type="text" value={form.justificativa} disabled={camposBloqueados} onChange={(e) => setForm({ ...form, justificativa: e.target.value })} />
+                    <input type="text" value={form.justificativa} onChange={(e) => setForm({ ...form, justificativa: e.target.value })} />
                   </div>
                 </div>
 
                 <div className="field campo-bloqueado"><label>Eficácia da Implementação</label>
-                  <textarea placeholder="Resultado obtido após a ação concluída" value={form.eficacia} disabled={camposBloqueados} onChange={(e) => setForm({ ...form, eficacia: e.target.value })} />
+                  <textarea placeholder="Resultado obtido após a ação concluída" value={form.eficacia} onChange={(e) => setForm({ ...form, eficacia: e.target.value })} />
                 </div>
               </div></div>
               <div className="modal-foot">
@@ -3104,7 +3265,10 @@ function TelaLogin() {
               <input type="password" placeholder="Sua senha" value={senha} onChange={(e) => setSenha(e.target.value)} />
             </div>
           </div>
-          <div className="modal-foot" style={{ justifyContent: "flex-end" }}>
+          <div className="modal-foot" style={{ justifyContent: "space-between", gap: 10 }}>
+            <button type="button" className="btn-ghost" onClick={() => { if (window.history.length > 1) window.history.back(); else window.location.href = window.location.origin + window.location.pathname; }}>
+              ← Retornar para Registros
+            </button>
             <button type="submit" className="btn-primary" disabled={carregando}>
               <CheckIcon size={16} /> {carregando ? "Entrando…" : "Entrar"}
             </button>
