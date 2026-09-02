@@ -1157,7 +1157,7 @@ function GroupedBarChart({ labels, series, isLight }) {
   return <canvas ref={canvasRef}></canvas>;
 }
 
-function App({ usuarioAuth, aoSair }) {
+function App({ usuarioAuth, aoAbrirLogin }) {
   const [tab, setTab] = useState("registro");
   const EMAILS_COBRANCAS = new Set([
     "luiz.brito@fs.agr.br",
@@ -2157,7 +2157,7 @@ function App({ usuarioAuth, aoSair }) {
                 </button>
               )}
             </div>
-            <button className="usuario-atual-btn" onClick={() => auth.signOut()} title="Clique para sair da conta">
+            <button className="usuario-atual-btn" onClick={aoAbrirLogin} title="Trocar usuário / acessar login">
               <UserIcon size={14} />
               <span className="usuario-atual-nome">{usuarioAtual ? usuarioAtual.nome.split(" ")[0] : (usuarioAuth.email || "").split("@")[0]}</span>
               {usuarioAtual && <span className={`pill ${isAdm ? "pill-altaalta" : "pill-baixa"}`} style={{ marginLeft: 2 }}>{isAdm ? "ADM" : "USER"}</span>}
@@ -3232,7 +3232,7 @@ function traduzErroAuth(err) {
   return (err && err.message) || "Não foi possível entrar. Tente novamente.";
 }
 
-function TelaLogin() {
+function TelaLogin({ onVoltar, permitirVoltar = false }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
@@ -3266,9 +3266,9 @@ function TelaLogin() {
             </div>
           </div>
           <div className="modal-foot" style={{ justifyContent: "space-between", gap: 10 }}>
-            <button type="button" className="btn-ghost" onClick={() => { if (window.history.length > 1) window.history.back(); else window.location.href = window.location.origin + window.location.pathname; }}>
+            {permitirVoltar && <button type="button" className="btn-ghost" onClick={onVoltar}>
               ← Retornar para Registros
-            </button>
+            </button>}
             <button type="submit" className="btn-primary" disabled={carregando}>
               <CheckIcon size={16} /> {carregando ? "Entrando…" : "Entrar"}
             </button>
@@ -3287,10 +3287,15 @@ function TelaCarregando() {
 
 function Raiz() {
   const [usuarioAuth, setUsuarioAuth] = useState(undefined); // undefined = ainda checando
-  useEffect(() => auth.onAuthStateChanged(setUsuarioAuth), []);
+  const [mostrarLogin, setMostrarLogin] = useState(false);
+  useEffect(() => auth.onAuthStateChanged((u) => {
+    setUsuarioAuth(u);
+    if (u) setMostrarLogin(false);
+  }), []);
   if (usuarioAuth === undefined) return <TelaCarregando />;
-  if (usuarioAuth === null) return <TelaLogin />;
-  return <App usuarioAuth={usuarioAuth} />;
+  if (usuarioAuth === null) return <TelaLogin permitirVoltar={false} />;
+  if (mostrarLogin) return <TelaLogin permitirVoltar={true} onVoltar={() => setMostrarLogin(false)} />;
+  return <App usuarioAuth={usuarioAuth} aoAbrirLogin={() => setMostrarLogin(true)} />;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<Raiz />);
