@@ -142,6 +142,11 @@
   .toolbar{display:flex;gap:10px;padding:16px 22px;border-bottom:1px solid var(--border-soft);flex-wrap:wrap;align-items:center;}
   .toolbar input[type=text]{flex:1;min-width:180px;}
   .toolbar select{width:auto;min-width:150px;}
+  .job-aid-btn{width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:var(--panel);color:var(--text-dim);display:flex;align-items:center;justify-content:center;text-decoration:none;transition:.18s ease;flex:0 0 auto;}
+  .job-aid-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-soft);transform:translateY(-1px);}
+  .relatorio-filtros{display:flex;align-items:end;gap:10px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--border-soft);}
+  .relatorio-filtros label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.35px;}
+  .relatorio-filtros input[type=date]{min-width:170px;}
   input[type=text],input[type=date],select,textarea{
     width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);
     padding:11px 13px;border-radius:8px;font-size:15.5px;font-family:inherit;outline:none;transition:border-color .15s;
@@ -901,16 +906,35 @@ function juntarResponsaveis(nomes) {
   return Array.from(new Set((nomes || []).map((n) => String(n || "").trim()).filter(Boolean))).join(" / ");
 }
 function buscarEmailPorResponsavel(usuarios, nomeResponsavel) {
-  const u = usuarios.find((x) => x.nome.trim().toLowerCase() === (nomeResponsavel || "").trim().toLowerCase());
+  const alvo = String(nomeResponsavel || "").trim().toLowerCase();
+  // Responsáveis genéricos por função: não dependem de listas de e-mail manuais.
+  if (alvo === "supervisores" || alvo === "supervisor") {
+    const emails = (usuarios || []).filter((u) => String(u.funcao || "").toLowerCase().includes("supervisor"))
+      .flatMap((u) => String(u.email || "").split(/[;,]/)).map((e) => e.trim()).filter(Boolean);
+    return Array.from(new Set(emails)).join(";") || null;
+  }
+  if (alvo === "coordenadores" || alvo === "coordenador") {
+    const emails = (usuarios || []).filter((u) => String(u.funcao || "").toLowerCase().includes("coordenador"))
+      .flatMap((u) => String(u.email || "").split(/[;,]/)).map((e) => e.trim()).filter(Boolean);
+    return Array.from(new Set(emails)).join(";") || null;
+  }
+  if (alvo === "coordenador e supervisores" || alvo === "coordenadores e supervisores") {
+    return emailsCoordenadoresSupervisores(usuarios).join(";") || null;
+  }
+  const u = (usuarios || []).find((x) => String(x.nome || "").trim().toLowerCase() === alvo);
   return u ? u.email : null;
 }
 function emailsCoordenadoresSupervisores(usuarios) {
-  // Regra da planilha Listas: para ações vencidas, copiar exatamente a lista
-  // "Coordenador e Supervisores" cadastrada na própria planilha.
-  const grupo = usuarios.find((u) => (u.nome || "").trim().toLowerCase() === "coordenador e supervisores");
-  if (!grupo || !grupo.email) return [];
+  // Reconhece automaticamente Coordenadores e Supervisores pela FUNÇÃO cadastrada em Usuários.
   const set = new Set();
-  grupo.email.split(";").forEach((e) => { const t = e.trim(); if (t) set.add(t); });
+  (usuarios || []).forEach((u) => {
+    const funcao = String(u.funcao || "").trim().toLowerCase();
+    if (!funcao.includes("coordenador") && !funcao.includes("supervisor")) return;
+    String(u.email || "").split(/[;,]/).forEach((e) => {
+      const email = e.trim().toLowerCase();
+      if (email) set.add(email);
+    });
+  });
   return Array.from(set);
 }
 function montarCorpoEmail(regra, responsavel, itens, hojeIso) {
@@ -1590,7 +1614,10 @@ function App({ usuarioAuth, aoAbrirLogin }) {
       });
       const grupos = Object.entries(porResponsavel).map(([responsavel, itens]) => {
         const email = buscarEmailPorResponsavel(usuarios, responsavel);
-        const cc = regra.tipo === "vencida" ? emailsCoordenadoresSupervisores(usuarios) : [];
+        const emailsDestino = String(email || "").split(/[;,]/).map((e) => e.trim().toLowerCase()).filter(Boolean);
+        const cc = regra.tipo === "vencida"
+          ? emailsCoordenadoresSupervisores(usuarios).filter((e) => !emailsDestino.includes(e.toLowerCase()))
+          : [];
         const corpo = montarCorpoEmail(regra, responsavel, itens, dataSimulada);
         return { responsavel, email, cc, itens, corpo };
       }).sort((a, b) => b.itens.length - a.itens.length);
@@ -2024,8 +2051,14 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     };
   }, [acoes]);
 
+  const [filtroRelatorioData, setFiltroRelatorioData] = useState("");
+  const acoesRelatorio = useMemo(() => {
+    if (!filtroRelatorioData) return acoes;
+    return acoes.filter((a) => a.data === filtroRelatorioData);
+  }, [acoes, filtroRelatorioData]);
+
   function dadosRelatorioAcoes() {
-    return acoes.map((a) => ({
+    return acoesRelatorio.map((a) => ({
       "ID": a.id || "",
       "Item": a.item || "",
       "Data de Registro": a.data ? fmtBR(a.data) : "",
@@ -2062,9 +2095,9 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     const dados = dadosRelatorioAcoes();
     const cols = dados.length ? Object.keys(dados[0]) : [];
     const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
-    const tabela = `<table border="1"><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${dados.map((r) => `<tr>${cols.map((c) => `<td>${esc(r[c])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-    const html = `<!doctype html><html><head><meta charset="UTF-8"></head><body>${tabela}</body></html>`;
-    baixarArquivo(new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" }), `FS_LOG_Base_Completa_${hojeISO()}.xls`);
+    const tabela = `<table border="1" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:9px;vertical-align:top"><thead><tr>${cols.map((c) => `<th style="padding:2px 4px;background:#eaf5ee;white-space:nowrap">${esc(c)}</th>`).join("")}</tr></thead><tbody>${dados.map((r) => `<tr>${cols.map((c) => `<td style="padding:2px 4px;vertical-align:top">${esc(r[c])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    const html = `<!doctype html><html><head><meta charset="UTF-8"><style>body{margin:8px}</style></head><body>${tabela}</body></html>`;
+    baixarArquivo(new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" }), `FS_LOG_Base_Completa_${filtroRelatorioData || hojeISO()}.xls`);
     setToast("Base completa exportada para Excel.");
     setTimeout(() => setToast(null), 2500);
   }
@@ -2074,22 +2107,31 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     try {
       const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
       if (!jsPDFCtor) throw new Error("Biblioteca de PDF não carregada");
-      const doc = new jsPDFCtor({ orientation: "landscape", unit: "mm", format: "a3" });
-      doc.setFontSize(14);
-      doc.text("FS LOG Site SMT | Base Completa de Ações", 14, 12);
-      doc.setFontSize(8);
-      doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")} | Total: ${dados.length} ações`, 14, 18);
-      const colunas = ["Item","Data de Registro","Evento","Ação","Detalhamento | Como Executar","O que foi feito (FUP)","Data (Start)","Importância","Status","Quando? (Até)","Responsável","Data de Conclusão","Postergar","Justificativa","Eficácia"];
+      const doc = new jsPDFCtor({ orientation: "landscape", unit: "mm", format: "a2" });
+      doc.setFontSize(13);
+      doc.text("FS LOG Site SMT | Base Completa de Ações", 8, 9);
+      doc.setFontSize(6.5);
+      const recorte = filtroRelatorioData ? ` | Data de Registro: ${fmtBR(filtroRelatorioData)}` : " | Todas as datas";
+      doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")} | Total: ${dados.length} ações${recorte}`, 8, 14);
+      const colunas = dados.length ? Object.keys(dados[0]) : [
+        "ID","Item","Data de Registro","Evento","Ação","Detalhamento | Como Executar","O que foi feito (FUP)","Evidências",
+        "Data (Start)","Importância","Status","Quando? (Até)","Responsável","Data de Conclusão","Tempo Ação Aberta (dias)","Postergar","Justificativa","Eficácia"
+      ];
+      const larguras = [14,14,19,25,42,46,46,35,19,20,21,20,34,20,20,18,34,34];
+      const columnStyles = {};
+      larguras.forEach((w, i) => { columnStyles[i] = { cellWidth: w }; });
       doc.autoTable({
-        startY: 22,
+        startY: 18,
         head: [colunas],
         body: dados.map((r) => colunas.map((c) => r[c])),
-        styles: { fontSize: 5.2, cellPadding: 1.1, overflow: "linebreak", valign: "top" },
-        headStyles: { fontSize: 5.5 },
-        margin: { left: 7, right: 7 },
-        tableWidth: "auto",
+        styles: { fontSize: 3.8, cellPadding: 0.65, overflow: "linebreak", valign: "top", lineWidth: 0.08 },
+        headStyles: { fontSize: 4.0, cellPadding: 0.75 },
+        margin: { left: 5, right: 5, top: 5, bottom: 5 },
+        columnStyles,
+        tableWidth: "wrap",
+        showHead: "everyPage",
       });
-      doc.save(`FS_LOG_Base_Completa_${hojeISO()}.pdf`);
+      doc.save(`FS_LOG_Base_Completa_${filtroRelatorioData || hojeISO()}.pdf`);
       setToast("Base completa exportada para PDF.");
       setTimeout(() => setToast(null), 2500);
     } catch (err) {
@@ -2165,6 +2207,9 @@ function App({ usuarioAuth, aoAbrirLogin }) {
             <button className="theme-btn" onClick={() => setTema(tema === "claro" ? "escuro" : "claro")} title="Alternar tema">
               {tema === "claro" ? <MoonIcon size={17} /> : <SunIcon size={17} />}
             </button>
+            <a className="job-aid-btn" href="Job_Aid_FS_LOG_Site_SMT.pdf" target="_blank" rel="noopener noreferrer" title="Abrir Job Aid / Auxílio de Trabalho">
+              <InfoIcon size={19} />
+            </a>
           </div>
         </div>
 
@@ -2585,18 +2630,29 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                 <button className="btn-ghost" onClick={exportarPDF}><FileTextIcon size={15} /> Exportar PDF</button>
               </div>
             </div>
-            <div style={{ padding: "14px 18px 18px", color: "var(--text-dim)", fontSize: 13.5 }}>
-              A exportação considera <strong>{acoes.length}</strong> ação(ões) e inclui todos os campos da base, responsáveis, datas, status, FUP, justificativa, eficácia e referências das evidências.
+            <div className="relatorio-filtros">
+              <label>Data de criação da ação
+                <input type="date" value={filtroRelatorioData} onChange={(e) => setFiltroRelatorioData(e.target.value)} />
+              </label>
+              <button className={`btn-ghost ${!filtroRelatorioData ? "active" : ""}`} onClick={() => setFiltroRelatorioData("")}>Todas as datas</button>
+              <div style={{ color: "var(--text-dim)", fontSize: 13 }}>
+                Exportação: <strong>{acoesRelatorio.length}</strong> de {acoes.length} ação(ões). O filtro considera a <strong>Data de Registro</strong>.
+              </div>
+            </div>
+            <div style={{ padding: "10px 18px 12px", color: "var(--text-dim)", fontSize: 12.5 }}>
+              Excel e PDF incluem <strong>todas as colunas da base</strong> em formato compacto, incluindo ID, evidências, datas, FUP, justificativa e eficácia.
             </div>
             <div className="tbl-wrap" style={{ maxHeight: 520 }}>
-              <table>
-                <thead><tr><th>Item</th><th>Data</th><th>Evento</th><th>Ação</th><th>Status</th><th>Responsável</th><th>Quando? (Até)</th></tr></thead>
+              <table style={{ fontSize: 11, minWidth: 2500 }}>
+                <thead><tr><th>ID</th><th>Item</th><th>Data</th><th>Evento</th><th>Ação</th><th>Detalhamento</th><th>FUP</th><th>Evidências</th><th>Data Start</th><th>Importância</th><th>Status</th><th>Até</th><th>Responsável</th><th>Conclusão</th><th>Tempo aberto</th><th>Postergar</th><th>Justificativa</th><th>Eficácia</th></tr></thead>
                 <tbody>
-                  {acoes.map((a) => (
+                  {acoesRelatorio.map((a) => (
                     <tr key={`rel-${a.id}`}>
-                      <td>{a.item || "—"}</td><td>{a.data ? fmtBR(a.data) : "—"}</td><td>{a.origem || "—"}</td>
-                      <td className="wrap-cell"><span className="wrap-box">{a.acao || "—"}</span></td>
-                      <td>{statusLabel(a.status || "")}</td><td>{a.responsavel || "—"}</td><td>{a.quandoAte ? fmtBR(a.quandoAte) : "—"}</td>
+                      <td>{a.id || "—"}</td><td>{a.item || "—"}</td><td>{a.data ? fmtBR(a.data) : "—"}</td><td>{a.origem || "—"}</td>
+                      <td>{a.acao || "—"}</td><td>{a.descricao || "—"}</td><td>{a.fup || "—"}</td>
+                      <td>{(a.evidencias || []).length}</td><td>{a.dataStart ? fmtBR(a.dataStart) : "—"}</td><td>{importanciaLabel(a.importancia || "")}</td>
+                      <td>{statusLabel(a.status || "")}</td><td>{a.quandoAte ? fmtBR(a.quandoAte) : "—"}</td><td>{a.responsavel || "—"}</td>
+                      <td>{a.dataConclusao ? fmtBR(a.dataConclusao) : "—"}</td><td>{diasAbertos(a) ?? "—"}</td><td>{a.postergar || "—"}</td><td>{a.justificativa || "—"}</td><td>{a.eficacia || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
