@@ -144,6 +144,16 @@
   .toolbar select{width:auto;min-width:150px;}
   .job-aid-btn{width:40px;height:40px;border-radius:10px;border:1px solid var(--border);background:var(--panel);color:var(--text-dim);display:flex;align-items:center;justify-content:center;text-decoration:none;transition:.18s ease;flex:0 0 auto;}
   .job-aid-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-soft);transform:translateY(-1px);}
+  .export-picker-backdrop{position:fixed;inset:0;background:rgba(6,8,12,.72);display:flex;align-items:center;justify-content:center;z-index:130;padding:20px;backdrop-filter:blur(2px);}
+  .export-picker{background:var(--panel);border:1px solid var(--border);border-radius:14px;width:min(560px,96vw);box-shadow:0 24px 70px rgba(0,0,0,.28);overflow:hidden;}
+  .export-picker-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border-soft);background:var(--panel-2);}
+  .export-picker-head h3{margin:0;font-size:17px;}
+  .export-picker-body{padding:20px;display:flex;flex-direction:column;gap:16px;}
+  .export-periodo{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .export-periodo label{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.35px;}
+  .export-picker-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;padding-top:4px;}
+  .export-all{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);}
+  @media(max-width:600px){.export-periodo{grid-template-columns:1fr}.export-picker-actions{justify-content:stretch}.export-picker-actions button{flex:1}}
   .relatorio-filtros{display:flex;align-items:end;gap:10px;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--border-soft);}
   .relatorio-filtros label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.35px;}
   .relatorio-filtros input[type=date]{min-width:170px;}
@@ -2051,14 +2061,32 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     };
   }, [acoes]);
 
-  const [filtroRelatorioData, setFiltroRelatorioData] = useState("");
-  const acoesRelatorio = useMemo(() => {
-    if (!filtroRelatorioData) return acoes;
-    return acoes.filter((a) => a.data === filtroRelatorioData);
-  }, [acoes, filtroRelatorioData]);
+  const [exportModal, setExportModal] = useState(null); // "excel" | "pdf" | null
+  const [exportDataInicio, setExportDataInicio] = useState("");
+  const [exportDataFim, setExportDataFim] = useState("");
+  const acoesRelatorio = acoes;
 
-  function dadosRelatorioAcoes() {
-    return acoesRelatorio.map((a) => ({
+  function acoesPorPeriodo(inicio, fim) {
+    if (!inicio && !fim) return acoes;
+    return acoes.filter((a) => {
+      const d = a.data || "";
+      if (!d) return false;
+      if (inicio && d < inicio) return false;
+      if (fim && d > fim) return false;
+      return true;
+    });
+  }
+
+  function abrirExportacao(tipo) {
+    setExportDataInicio("");
+    setExportDataFim("");
+    setExportModal(tipo);
+  }
+
+  function fecharExportacao() { setExportModal(null); }
+
+  function dadosRelatorioAcoes(lista = acoesRelatorio) {
+    return lista.map((a) => ({
       "ID": a.id || "",
       "Item": a.item || "",
       "Data de Registro": a.data ? fmtBR(a.data) : "",
@@ -2091,19 +2119,19 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     setTimeout(() => URL.revokeObjectURL(url), 1500);
   }
 
-  function exportarExcel() {
-    const dados = dadosRelatorioAcoes();
+  function exportarExcel(lista = acoes, rotulo = "Todo_Relatorio") {
+    const dados = dadosRelatorioAcoes(lista);
     const cols = dados.length ? Object.keys(dados[0]) : [];
     const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
     const tabela = `<table border="1" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:9px;vertical-align:top"><thead><tr>${cols.map((c) => `<th style="padding:2px 4px;background:#eaf5ee;white-space:nowrap">${esc(c)}</th>`).join("")}</tr></thead><tbody>${dados.map((r) => `<tr>${cols.map((c) => `<td style="padding:2px 4px;vertical-align:top">${esc(r[c])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
     const html = `<!doctype html><html><head><meta charset="UTF-8"><style>body{margin:8px}</style></head><body>${tabela}</body></html>`;
-    baixarArquivo(new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" }), `FS_LOG_Base_Completa_${filtroRelatorioData || hojeISO()}.xls`);
+    baixarArquivo(new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" }), `FS_LOG_${rotulo}_${hojeISO()}.xls`);
     setToast("Base completa exportada para Excel.");
     setTimeout(() => setToast(null), 2500);
   }
 
-  function exportarPDF() {
-    const dados = dadosRelatorioAcoes();
+  function exportarPDF(lista = acoes, rotulo = "Todo_Relatorio", descricaoPeriodo = "Todo o relatório") {
+    const dados = dadosRelatorioAcoes(lista);
     try {
       const jsPDFCtor = window.jspdf && window.jspdf.jsPDF;
       if (!jsPDFCtor) throw new Error("Biblioteca de PDF não carregada");
@@ -2111,8 +2139,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
       doc.setFontSize(13);
       doc.text("FS LOG Site SMT | Base Completa de Ações", 8, 9);
       doc.setFontSize(6.5);
-      const recorte = filtroRelatorioData ? ` | Data de Registro: ${fmtBR(filtroRelatorioData)}` : " | Todas as datas";
-      doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")} | Total: ${dados.length} ações${recorte}`, 8, 14);
+      doc.text(`Gerado em ${new Date().toLocaleString("pt-BR")} | Total: ${dados.length} ações | ${descricaoPeriodo}`, 8, 14);
       const colunas = dados.length ? Object.keys(dados[0]) : [
         "ID","Item","Data de Registro","Evento","Ação","Detalhamento | Como Executar","O que foi feito (FUP)","Evidências",
         "Data (Start)","Importância","Status","Quando? (Até)","Responsável","Data de Conclusão","Tempo Ação Aberta (dias)","Postergar","Justificativa","Eficácia"
@@ -2131,13 +2158,43 @@ function App({ usuarioAuth, aoAbrirLogin }) {
         tableWidth: "wrap",
         showHead: "everyPage",
       });
-      doc.save(`FS_LOG_Base_Completa_${filtroRelatorioData || hojeISO()}.pdf`);
+      doc.save(`FS_LOG_${rotulo}_${hojeISO()}.pdf`);
       setToast("Base completa exportada para PDF.");
       setTimeout(() => setToast(null), 2500);
     } catch (err) {
       setToast("Não foi possível gerar o PDF. Verifique a conexão e tente novamente.");
       setTimeout(() => setToast(null), 3500);
     }
+  }
+
+  function confirmarExportacaoPeriodo() {
+    if (!exportDataInicio || !exportDataFim) {
+      setToast("Selecione a data inicial e a data final.");
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+    if (exportDataInicio > exportDataFim) {
+      setToast("A data inicial não pode ser maior que a data final.");
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+    const lista = acoesPorPeriodo(exportDataInicio, exportDataFim);
+    if (!lista.length) {
+      setToast("Nenhuma ação encontrada no período selecionado.");
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+    const rotulo = `${exportDataInicio}_a_${exportDataFim}`;
+    const descricao = `Coluna DATA: ${fmtBR(exportDataInicio)} até ${fmtBR(exportDataFim)}`;
+    if (exportModal === "excel") exportarExcel(lista, rotulo);
+    if (exportModal === "pdf") exportarPDF(lista, rotulo, descricao);
+    fecharExportacao();
+  }
+
+  function exportarTudoDoModal() {
+    if (exportModal === "excel") exportarExcel(acoes, "Todo_Relatorio");
+    if (exportModal === "pdf") exportarPDF(acoes, "Todo_Relatorio", "Todo o relatório");
+    fecharExportacao();
   }
 
   return (
@@ -2626,17 +2683,8 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                 <div className="sub">Exportação da base completa de ações registradas</div>
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button className="btn-primary" onClick={exportarExcel}><FileTextIcon size={15} /> Exportar Excel</button>
-                <button className="btn-ghost" onClick={exportarPDF}><FileTextIcon size={15} /> Exportar PDF</button>
-              </div>
-            </div>
-            <div className="relatorio-filtros">
-              <label>Data de criação da ação
-                <input type="date" value={filtroRelatorioData} onChange={(e) => setFiltroRelatorioData(e.target.value)} />
-              </label>
-              <button className={`btn-ghost ${!filtroRelatorioData ? "active" : ""}`} onClick={() => setFiltroRelatorioData("")}>Todas as datas</button>
-              <div style={{ color: "var(--text-dim)", fontSize: 13 }}>
-                Exportação: <strong>{acoesRelatorio.length}</strong> de {acoes.length} ação(ões). O filtro considera a <strong>Data de Registro</strong>.
+                <button className="btn-primary" onClick={() => abrirExportacao("excel")}><FileTextIcon size={15} /> Exportar Excel</button>
+                <button className="btn-ghost" onClick={() => abrirExportacao("pdf")}><FileTextIcon size={15} /> Exportar PDF</button>
               </div>
             </div>
             <div style={{ padding: "10px 18px 12px", color: "var(--text-dim)", fontSize: 12.5 }}>
@@ -2933,6 +2981,39 @@ function App({ usuarioAuth, aoAbrirLogin }) {
           </div>
         )}
       </div>
+
+      {exportModal && (
+        <div className="export-picker-backdrop" onClick={fecharExportacao}>
+          <div className="export-picker" onClick={(e) => e.stopPropagation()}>
+            <div className="export-picker-head">
+              <div>
+                <h3>{exportModal === "excel" ? "Exportar Excel" : "Exportar PDF"}</h3>
+                <div className="sub" style={{marginTop:4}}>Escolha o período usando a coluna DATA da ação.</div>
+              </div>
+              <button className="btn-ghost" onClick={fecharExportacao}><XIcon size={14} /> Fechar</button>
+            </div>
+            <div className="export-picker-body">
+              <div className="export-periodo">
+                <label>Data inicial
+                  <input type="date" value={exportDataInicio} onChange={(e) => setExportDataInicio(e.target.value)} />
+                </label>
+                <label>Data final
+                  <input type="date" value={exportDataFim} onChange={(e) => setExportDataFim(e.target.value)} />
+                </label>
+              </div>
+              <div style={{fontSize:12.5,color:"var(--text-dim)"}}>O período considera exclusivamente a coluna <strong>DATA</strong> exibida no Registro de Ações.</div>
+              <div className="export-all">
+                <div><strong>Exportar todo relatório</strong><div style={{fontSize:12,color:"var(--text-faint)",marginTop:3}}>Ignora o período e exporta todas as {acoes.length} ações.</div></div>
+                <button className="btn-ghost" onClick={exportarTudoDoModal}>Exportar tudo</button>
+              </div>
+              <div className="export-picker-actions">
+                <button className="btn-ghost" onClick={fecharExportacao}>Cancelar</button>
+                <button className="btn-primary" onClick={confirmarExportacaoPeriodo}>Exportar período</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && <div className="toast"><CheckIcon size={15} />{toast}</div>}
 
