@@ -3009,15 +3009,8 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                       ) : (a.eficacia ? <span className="wrap-box">{a.eficacia}</span> : <span className="cell-empty">—</span>)}</td>
                       <td className="td-compact">
                         {isAdm ? (
-                          <>
-                            <button className="btn-ghost" onClick={(e) => { e.stopPropagation(); abrirEdicao(a); }} title="Editar ação" style={{ marginRight: 6 }}><PencilIcon size={13} /></button>
-                            <button className="btn-ghost" onClick={(e) => { e.stopPropagation(); excluir(a); }} title="Excluir ação"><TrashIcon size={13} /></button>
-                          </>
-                        ) : usuarioEhResponsavelDaAcao(a) ? (
-                          <button className="btn-ghost" onClick={(e) => { e.stopPropagation(); abrirEdicao(a); }} title="Editar minha ação"><PencilIcon size={13} /></button>
-                        ) : (
-                          <span className="btn-ghost" style={{ opacity: 0.4, cursor: "not-allowed" }} title="Você não é responsável por esta ação"><LockIcon size={12} /></span>
-                        )}
+                          <button className="btn-ghost" onClick={(e) => { e.stopPropagation(); excluir(a); }} title="Excluir ação"><TrashIcon size={13} /></button>
+                        ) : null}
                       </td>
                     </tr>
                   ))}
