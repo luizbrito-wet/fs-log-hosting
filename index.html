@@ -2774,7 +2774,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
         )}
 
         {tab === "registro" && (
-          <div className="card">
+          <div className="card" style={{ overflow: "visible" }}>
             <div className="card-head">
               <div><h2>Registro de Ações</h2><div className="sub">{acoesFiltradas.length} de {acoes.length} ações</div>{isAdm && <div className="inline-adm-hint"><PencilIcon size={11} /> Edição direta habilitada para ADM</div>}</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch" }}>
