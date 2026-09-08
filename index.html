@@ -140,6 +140,7 @@
   .resp-count{font-family:var(--mono);color:var(--text-dim);font-size:14px;}
 
   .toolbar{display:flex;gap:10px;padding:16px 22px;border-bottom:1px solid var(--border-soft);flex-wrap:wrap;align-items:center;}
+  .registro-filter-sticky{position:sticky;top:0;z-index:35;background:var(--surface);box-shadow:0 6px 14px rgba(15,23,42,.08);}
   .toolbar input[type=text]{flex:1;min-width:180px;}
   .toolbar select{width:auto;min-width:150px;}
   .job-aid-btn{width:44px;height:44px;border-radius:10px;border:1px solid var(--border);background:var(--panel);display:flex;align-items:center;justify-content:center;transition:.18s ease;flex:0 0 auto;cursor:pointer;padding:4px;overflow:hidden;}
@@ -854,7 +855,7 @@ const SEED_USUARIOS = [
   { id: "US-8", nome: "Elaine Marcelino Moreira", email: "elaine.moreira@fs.agr.br", funcao: "Colaborador", perfil: "USER" },
   { id: "US-9", nome: "Hevily Tainara Motter", email: "hevily.motter@fs.agr.br", funcao: "Supervisor", perfil: "ADM" },
   { id: "US-10", nome: "João Felipe Mendoza Silva", email: "joao.mendoza@fs.agr.br", funcao: "Colaborador", perfil: "USER" },
-  { id: "US-11", nome: "João Paulo de Oliveira Franco", email: "joao.franco@fs.agr.br", funcao: "Colaborador", perfil: "USER" },
+  { id: "US-11", nome: "João Paulo de Oliveira Franco", email: "joao.franco@fs.agr.br", funcao: "Colaborador", perfil: "ADM" },
   { id: "US-12", nome: "Luiz Gustavo de Brito", email: "luiz.brito@fs.agr.br", funcao: "Colaborador", perfil: "ADM" },
   { id: "US-13", nome: "Rosa Adriana Saldanha", email: "rosa.saldanha@fs.agr.br", funcao: "Colaborador", perfil: "USER" },
   { id: "US-14", nome: "Sérgio Renato Leitão", email: "sergio.leitao@fs.agr.br", funcao: "Coordenador", perfil: "ADM" },
@@ -1399,7 +1400,24 @@ function App({ usuarioAuth, aoAbrirLogin }) {
     const alvo = (usuarioAuth.email || "").trim().toLowerCase();
     return usuarios.find((u) => (u.email || "").split(";").some((e) => e.trim().toLowerCase() === alvo)) || null;
   }, [usuarios, usuarioAuth]);
-  const isAdm = usuarioAtual ? usuarioAtual.perfil === "ADM" : false;
+  // João Paulo de Oliveira Franco possui acesso administrativo total.
+  // A verificação pelo e-mail garante a permissão mesmo antes da migração do cadastro salvo no Firestore.
+  const isJoaoFranco = (usuarioAuth?.email || "").trim().toLowerCase() === "joao.franco@fs.agr.br";
+  const isAdm = usuarioAtual ? (usuarioAtual.perfil === "ADM" || isJoaoFranco) : isJoaoFranco;
+
+  // Migra automaticamente o cadastro já existente de João Franco para ADM no Firestore.
+  useEffect(() => {
+    if (!usuariosCarregados) return;
+    const precisaMigrar = usuarios.some((u) =>
+      (u.email || "").split(";").some((e) => e.trim().toLowerCase() === "joao.franco@fs.agr.br") && u.perfil !== "ADM"
+    );
+    if (!precisaMigrar) return;
+    setUsuarios((list) => list.map((u) =>
+      (u.email || "").split(";").some((e) => e.trim().toLowerCase() === "joao.franco@fs.agr.br")
+        ? { ...u, perfil: "ADM" }
+        : u
+    ));
+  }, [usuariosCarregados, usuarios]);
 
   // A aba Usuários é exclusiva para perfis ADM.
   // Se um usuário comum estiver nessa aba por qualquer estado anterior, volta ao Registro.
@@ -2764,7 +2782,7 @@ function App({ usuarioAuth, aoAbrirLogin }) {
                 <button className="btn-subacao" onClick={abrirSeletorSubAcao}><PlusIcon size={14} /> Sub Ação</button>
               </div>
             </div>
-            <div className="toolbar">
+            <div className="toolbar registro-filter-sticky">
               <input type="text" placeholder="Buscar por ação, item ou responsável…" value={busca} onChange={(e) => setBusca(e.target.value)} />
               <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
                 <option value="">Todos os status</option>
